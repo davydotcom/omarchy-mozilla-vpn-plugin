@@ -52,5 +52,4 @@ gh issue create \
   --body-file /tmp/omarchy-plugin-submission.md
 ```
 
-Optional next polish before submit: add a root `preview.png` screenshot of the
-bar icon + open panel.
+Preview asset: root `preview.png` (fullscreen capture on empty workspace 5).
