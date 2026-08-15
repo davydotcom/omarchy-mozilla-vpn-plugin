@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.davydotcom.mozilla-vpn",
+  "name": "Mozilla VPN",
+  "version": "1.0.0",
+  "author": "David Estes",
+  "license": "MIT",
+  "description": "Toggle Mozilla VPN and pick a city target from the Omarchy bar.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Mozilla VPN",
+    "description": "Toggle Mozilla VPN on or off and choose a city server.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 30,
+      "recentCityIds": []
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 5,
+        "max": 3600,
+        "step": 5,
+        "defaultValue": 30
+      }
+    ]
+  }
+}

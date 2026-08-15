@@ -1,0 +1,8 @@
+# Ignore editor / OS noise. Keep the plugin root clean for marketplace validation.
+*~
+*.swp
+*.swo
+.DS_Store
+.idea/
+.vscode/
+*.bak
