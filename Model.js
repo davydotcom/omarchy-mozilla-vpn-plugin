@@ -344,6 +344,23 @@ function resolveDefaultCity(cities, geo) {
   return findCityInCountry(cities, geo.country, geo.city)
 }
 
+function parsePrivacy(raw) {
+  var text = String(raw || "").trim()
+  var empty = { ads: false, trackers: false, malware: false, flags: 0 }
+  if (text === "") return empty
+  try {
+    var data = JSON.parse(text)
+    return {
+      ads: data.ads === true,
+      trackers: data.trackers === true,
+      malware: data.malware === true,
+      flags: parseInt(String(data.flags || 0), 10) || 0
+    }
+  } catch (e) {
+    return empty
+  }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     field: field,
@@ -360,6 +377,7 @@ if (typeof module !== "undefined") {
     parseUserGeo: parseUserGeo,
     findNearestCity: findNearestCity,
     findCityInCountry: findCityInCountry,
-    resolveDefaultCity: resolveDefaultCity
+    resolveDefaultCity: resolveDefaultCity,
+    parsePrivacy: parsePrivacy
   }
 }

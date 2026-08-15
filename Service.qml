@@ -32,6 +32,18 @@ Item {
 
   signal nearestDefaultFinished(var city)
 
+  property bool blockAds: false
+  property bool blockTrackers: false
+  property bool blockMalware: false
+  property bool privacyBusy: false
+  property bool _reconnectAfterPrivacy: false
+
+  readonly property string privacyHelper: {
+    var url = String(Qt.resolvedUrl("privacy.py"))
+    if (url.indexOf("file://") === 0) url = decodeURIComponent(url.substring(7))
+    return url
+  }
+
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 30, 5, 3600)
   readonly property bool busy: whichProcess.running
     || statusProcess.running
@@ -39,7 +51,10 @@ Item {
     || actionProcess.running
     || selectProcess.running
     || geoProcess.running
+    || privacyGetProcess.running
+    || privacySetProcess.running
     || nearestDefaultBusy
+    || privacyBusy
 
   property string _statusOutput: ""
   property string _statusError: ""
@@ -76,6 +91,7 @@ Item {
   function refresh(forceServers) {
     if (installed) {
       refreshStatus(forceServers === true)
+      refreshPrivacy()
       return
     }
     if (!whichProcess.running) {
@@ -228,6 +244,40 @@ Item {
     Quickshell.execDetached(["mozillavpn", "ui"])
   }
 
+  function applyPrivacy(raw) {
+    var parsed = Model.parsePrivacy(raw)
+    blockAds = parsed.ads
+    blockTrackers = parsed.trackers
+    blockMalware = parsed.malware
+  }
+
+  function refreshPrivacy() {
+    if (privacyGetProcess.running || privacySetProcess.running) return
+    if (privacyHelper === "") return
+    privacyGetProcess.command = ["python3", privacyHelper, "get"]
+    privacyGetProcess.running = true
+  }
+
+  function togglePrivacy(kind) {
+    var key = String(kind || "")
+    if (key !== "ads" && key !== "trackers" && key !== "malware") return
+    if (!installed || privacySetProcess.running) return
+    privacyBusy = true
+    actionStatus = "Updating privacy features…"
+    privacySetProcess.command = ["python3", privacyHelper, "toggle", key]
+    privacySetProcess.running = true
+  }
+
+  function bounceTunnelForPrivacy() {
+    if (!active && _desired !== 1) {
+      privacyBusy = false
+      delayedRefresh.restart()
+      return
+    }
+    _reconnectAfterPrivacy = true
+    runAction(["mozillavpn", "deactivate"])
+  }
+
   Timer {
     id: refreshTimer
     interval: root.refreshIntervalSec * 1000
@@ -315,6 +365,20 @@ Item {
     onExited: function(exitCode) {
       var stdout = String(actionStdout.text || root._actionOutput || "")
       var stderr = String(actionStderr.text || root._actionError || "")
+      if (root._reconnectAfterPrivacy) {
+        root._reconnectAfterPrivacy = false
+        if (exitCode === 0) {
+          root.activate()
+        } else {
+          root.privacyBusy = false
+          root._desired = -1
+          root.lastError = root.elideStatus(stderr || stdout || "Could not reconnect after privacy change")
+          root.actionStatus = root.lastError
+          actionStatusTimer.restart()
+        }
+        delayedRefresh.restart()
+        return
+      }
       if (exitCode !== 0) {
         root._desired = -1
         root.lastError = root.elideStatus(stderr || stdout || "Mozilla VPN command failed")
@@ -323,6 +387,7 @@ Item {
       } else {
         root.lastError = ""
         root.actionStatus = ""
+        if (root.privacyBusy) root.privacyBusy = false
       }
       delayedRefresh.restart()
     }
@@ -397,6 +462,42 @@ Item {
 
       root._pendingNearestCity = city
       root.selectCity(city, false)
+    }
+  }
+
+  Process {
+    id: privacyGetProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: privacyGetStdout; waitForEnd: true }
+    stderr: StdioCollector { id: privacyGetStderr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var stdout = String(privacyGetStdout.text || "")
+      if (exitCode === 0) root.applyPrivacy(stdout)
+    }
+  }
+
+  Process {
+    id: privacySetProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: privacySetStdout; waitForEnd: true }
+    stderr: StdioCollector { id: privacySetStderr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var stdout = String(privacySetStdout.text || "")
+      var stderr = String(privacySetStderr.text || "")
+      if (exitCode !== 0) {
+        root.privacyBusy = false
+        root.lastError = root.elideStatus(stderr || stdout || "Could not update privacy features")
+        root.actionStatus = root.lastError
+        actionStatusTimer.restart()
+        return
+      }
+      root.applyPrivacy(stdout)
+      root.lastError = ""
+      root.actionStatus = "Privacy features updated"
+      actionStatusTimer.restart()
+      root.bounceTunnelForPrivacy()
     }
   }
 }

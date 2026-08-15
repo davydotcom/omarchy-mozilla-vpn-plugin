@@ -13,8 +13,9 @@ target through the `mozillavpn` CLI.
 
 This plugin shells out to `mozillavpn` (`status`, `servers`, `select`,
 `activate`, `deactivate`, `ui`) and, only when choosing a first-time default
-city, to `curl https://ipinfo.io/json` while the VPN is disconnected. It does
-not require root or sudo.
+city, to `curl https://ipinfo.io/json` while the VPN is disconnected. Privacy
+toggles update `dnsProviderFlags` in `~/.config/mozilla/vpn.moz` (the same
+settings the Mozilla VPN app uses). It does not require root or sudo.
 
 ## Install
 
@@ -34,6 +35,8 @@ omarchy plugin enable io.github.davydotcom.mozilla-vpn --section right --after o
 - Right click: toggle VPN on/off
 - Middle click: refresh status
 - Panel switch: toggle VPN
+- Privacy: block ads, trackers, and malware (Mozilla DNS filters). If the VPN
+  is connected, it reconnects so the change applies
 - City list: select a city and connect (remembers recent cities)
 - First run with no saved city: while disconnected, picks the nearest Mozilla
   VPN city from your public IP location

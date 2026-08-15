@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.davydotcom.mozilla-vpn",
   "name": "Mozilla VPN",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "author": "David Estes",
   "license": "MIT",
   "description": "Toggle Mozilla VPN and pick a city target from the Omarchy bar.",

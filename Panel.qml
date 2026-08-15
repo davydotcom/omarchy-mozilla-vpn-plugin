@@ -18,6 +18,14 @@ Panel {
   property bool cursorActive: false
   property string cityQuery: ""
   property int phraseIndex: 0
+  property int privacyIndex: 0
+
+  ListModel {
+    id: privacyModel
+    ListElement { kind: "ads"; label: "Block ads"; detail: "Fewer ads while you are on VPN" }
+    ListElement { kind: "trackers"; label: "Block trackers"; detail: "Fewer trackers can follow you" }
+    ListElement { kind: "malware"; label: "Block malware"; detail: "Block known malware domains" }
+  }
 
   readonly property var activePhrases: [
     "Routing packets",
@@ -164,7 +172,10 @@ Panel {
 
   function ensureCursor() {
     if (cityIndex >= filteredCities.length) cityIndex = Math.max(0, filteredCities.length - 1)
-    if (focusSection === "cities" && filteredCities.length === 0) focusSection = "header"
+    if (privacyIndex < 0) privacyIndex = 0
+    if (privacyIndex > 2) privacyIndex = 2
+    if (focusSection === "cities" && filteredCities.length === 0) focusSection = vpn.authenticated ? "privacy" : "header"
+    if (focusSection === "privacy" && !vpn.authenticated) focusSection = "header"
     if (focusSection === "auth" && vpn.authenticated) focusSection = "header"
   }
 
@@ -176,14 +187,26 @@ Panel {
     if (focusSection === "header") {
       if (dy > 0) {
         if (!vpn.authenticated) focusSection = "auth"
-        else if (filteredCities.length > 0) focusSection = "cities"
+        else focusSection = "privacy"
       }
     } else if (focusSection === "auth") {
       if (dy < 0) focusSection = "header"
+    } else if (focusSection === "privacy") {
+      if (dy < 0) {
+        if (privacyIndex <= 0) focusSection = "header"
+        else privacyIndex--
+      } else if (privacyIndex < 2) {
+        privacyIndex++
+      } else if (filteredCities.length > 0) {
+        focusSection = "cities"
+        cityIndex = 0
+      }
     } else if (focusSection === "cities") {
       if (dy < 0) {
-        if (cityIndex <= 0) focusSection = "header"
-        else cityIndex--
+        if (cityIndex <= 0) {
+          focusSection = "privacy"
+          privacyIndex = 2
+        } else cityIndex--
       } else if (cityIndex < filteredCities.length - 1) {
         cityIndex++
       }
@@ -196,7 +219,10 @@ Panel {
     ensureCursor()
     if (focusSection === "header") vpn.toggleVpn()
     else if (focusSection === "auth") vpn.openUi()
-    else if (focusSection === "cities") chooseCity(selectedCity())
+    else if (focusSection === "privacy") {
+      var option = privacyModel.get(privacyIndex)
+      if (option) vpn.togglePrivacy(option.kind)
+    } else if (focusSection === "cities") chooseCity(selectedCity())
   }
 
   function setHeaderCursor() {
@@ -207,6 +233,19 @@ Panel {
   function setAuthCursor() {
     cursorActive = true
     focusSection = "auth"
+  }
+
+  function setPrivacyCursor(index) {
+    cursorActive = true
+    focusSection = "privacy"
+    privacyIndex = index
+  }
+
+  function privacyChecked(kind) {
+    if (kind === "ads") return vpn.blockAds
+    if (kind === "trackers") return vpn.blockTrackers
+    if (kind === "malware") return vpn.blockMalware
+    return false
   }
 
   function setCityCursor(index) {
@@ -233,7 +272,9 @@ Panel {
   }
 
   function scrollCursorIntoView() {
-    if (focusSection === "cities" && cityColumn && cityIndex >= 0 && cityIndex < cityColumn.children.length)
+    if (focusSection === "privacy" && privacyColumn && privacyIndex >= 0 && privacyIndex < privacyColumn.children.length)
+      scrollItemIntoView(privacyColumn.children[privacyIndex])
+    else if (focusSection === "cities" && cityColumn && cityIndex >= 0 && cityIndex < cityColumn.children.length)
       scrollItemIntoView(cityColumn.children[cityIndex])
   }
 
@@ -302,6 +343,9 @@ Panel {
     function activate(): string { vpn.activate(); return "ok" }
     function deactivate(): string { vpn.deactivate(); return "ok" }
     function toggleVpn(): string { vpn.toggleVpn(); return "ok" }
+    function toggleAds(): string { vpn.togglePrivacy("ads"); return "ok" }
+    function toggleTrackers(): string { vpn.togglePrivacy("trackers"); return "ok" }
+    function toggleMalware(): string { vpn.togglePrivacy("malware"); return "ok" }
     function status(): string { return vpn.statusText }
   }
 
@@ -521,6 +565,40 @@ Panel {
             spacing: Style.space(10)
 
             PanelSectionHeader {
+              text: "PRIVACY"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Column {
+              id: privacyColumn
+              width: parent.width
+              spacing: Style.space(6)
+
+              Repeater {
+                model: privacyModel
+                PrivacyRow {
+                  required property var modelData
+                  required property int index
+                  width: privacyColumn.width
+                  option: modelData
+                  rowIndex: index
+                }
+              }
+            }
+          }
+
+          PanelSeparator {
+            visible: vpn.installed && vpn.authenticated
+            foreground: root.foreground
+          }
+
+          Column {
+            visible: vpn.installed && vpn.authenticated
+            width: parent.width
+            spacing: Style.space(10)
+
+            PanelSectionHeader {
               text: "SERVERS"
               foreground: root.foreground
               fontFamily: root.fontFamily
@@ -689,6 +767,77 @@ Panel {
       cursorShape: Qt.PointingHandCursor
       onEntered: root.setCityCursor(cityRow.rowIndex)
       onClicked: root.chooseCity(cityRow.city)
+    }
+  }
+
+  component PrivacyRow: CursorSurface {
+    id: privacyRow
+    property var option: null
+    property int rowIndex: 0
+    readonly property string kind: option ? String(option.kind || "") : ""
+    readonly property string title: option ? String(option.label || "") : ""
+    readonly property string detail: option ? String(option.detail || "") : ""
+    readonly property bool on: root.privacyChecked(kind)
+
+    hasCursor: root.cursorActive && root.focusSection === "privacy" && root.privacyIndex === rowIndex
+    current: on
+    foreground: root.foreground
+    fill: root.hoverFill
+    currentFill: "transparent"
+    implicitHeight: privacyInner.implicitHeight + Style.spacing.xl
+
+    Row {
+      id: privacyInner
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(6)
+      anchors.rightMargin: Style.space(6)
+      spacing: Style.space(8)
+
+      Column {
+        width: parent.width - Style.space(52)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(1)
+
+        Text {
+          width: parent.width
+          text: privacyRow.title
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+
+        Text {
+          width: parent.width
+          text: privacyRow.detail
+          visible: text !== ""
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
+
+      ToggleSwitch {
+        id: privacySwitch
+        anchors.verticalCenter: parent.verticalCenter
+        checked: privacyRow.on
+        busy: vpn.privacyBusy
+        interactive: false
+        hasCursor: privacyRow.hasCursor
+        foreground: root.foreground
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: vpn.privacyBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
+      enabled: !vpn.privacyBusy
+      onEntered: root.setPrivacyCursor(privacyRow.rowIndex)
+      onClicked: if (privacyRow.kind !== "") vpn.togglePrivacy(privacyRow.kind)
     }
   }
 }
