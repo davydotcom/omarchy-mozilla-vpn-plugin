@@ -27,6 +27,10 @@ Item {
   property string selectingCityId: ""
   property string actionStatus: ""
   property string lastError: ""
+  property bool nearestDefaultBusy: false
+  property bool _nearestSelectPending: false
+
+  signal nearestDefaultFinished(var city)
 
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 30, 5, 3600)
   readonly property bool busy: whichProcess.running
@@ -34,6 +38,8 @@ Item {
     || serversProcess.running
     || actionProcess.running
     || selectProcess.running
+    || geoProcess.running
+    || nearestDefaultBusy
 
   property string _statusOutput: ""
   property string _statusError: ""
@@ -43,8 +49,11 @@ Item {
   property string _actionError: ""
   property string _selectOutput: ""
   property string _selectError: ""
+  property string _geoOutput: ""
+  property string _geoError: ""
   property bool _activateAfterSelect: false
   property double _lastServersRefreshMs: 0
+  property var _pendingNearestCity: null
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -173,6 +182,39 @@ Item {
     selectProcess.running = true
   }
 
+  // One-shot: when the widget has no remembered city and the tunnel is down,
+  // geolocate the public IP and select the nearest Mozilla VPN city.
+  // Skips while connected so the exit IP is not mistaken for the user.
+  function maybeRequestNearestDefault() {
+    if (!installed || !authenticated || active || cities.length === 0) return
+    if (geoProcess.running || nearestDefaultBusy || selectProcess.running) return
+
+    nearestDefaultBusy = true
+    _nearestSelectPending = true
+    _pendingNearestCity = null
+    _geoOutput = ""
+    _geoError = ""
+    actionStatus = "Finding nearest city…"
+    geoProcess.command = ["curl", "-fsS", "--max-time", "8", "https://ipinfo.io/json"]
+    geoProcess.running = true
+  }
+
+  function finishNearestDefault(city, message) {
+    nearestDefaultBusy = false
+    _nearestSelectPending = false
+    _pendingNearestCity = null
+    if (city) {
+      actionStatus = message || ("Nearest city · " + String(city.city || city.id || ""))
+      actionStatusTimer.restart()
+    } else if (message) {
+      actionStatus = message
+      actionStatusTimer.restart()
+    } else {
+      actionStatus = ""
+    }
+    nearestDefaultFinished(city || null)
+  }
+
   function runAction(command) {
     if (actionProcess.running) return
     _actionOutput = ""
@@ -296,6 +338,8 @@ Item {
       var stdout = String(selectStdout.text || root._selectOutput || "")
       var stderr = String(selectStderr.text || root._selectError || "")
       var shouldActivate = root._activateAfterSelect
+      var nearestCity = root._pendingNearestCity
+      var nearestPending = root._nearestSelectPending
       root._activateAfterSelect = false
       root.selectingCityId = ""
 
@@ -303,11 +347,18 @@ Item {
         root.lastError = root.elideStatus(stderr || stdout || "Server selection failed")
         root.actionStatus = root.lastError
         actionStatusTimer.restart()
+        if (nearestPending) root.finishNearestDefault(null, root.lastError)
         delayedRefresh.restart()
         return
       }
 
       root.lastError = ""
+      if (nearestPending) {
+        root.finishNearestDefault(nearestCity)
+        delayedRefresh.restart()
+        return
+      }
+
       if (shouldActivate) {
         root.activate()
       } else {
@@ -315,6 +366,37 @@ Item {
         actionStatusTimer.restart()
         delayedRefresh.restart()
       }
+    }
+  }
+
+  Process {
+    id: geoProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: geoStdout; waitForEnd: true; onStreamFinished: root._geoOutput = text }
+    stderr: StdioCollector { id: geoStderr; waitForEnd: true; onStreamFinished: root._geoError = text }
+    onExited: function(exitCode) {
+      var stdout = String(geoStdout.text || root._geoOutput || "")
+      var stderr = String(geoStderr.text || root._geoError || "")
+      if (!root._nearestSelectPending) {
+        root.nearestDefaultBusy = false
+        return
+      }
+
+      if (exitCode !== 0) {
+        root.finishNearestDefault(null, root.elideStatus(stderr || "Could not locate this network"))
+        return
+      }
+
+      var geo = Model.parseUserGeo(stdout)
+      var city = Model.resolveDefaultCity(root.cities, geo)
+      if (!city) {
+        root.finishNearestDefault(null, "No nearby Mozilla VPN city found")
+        return
+      }
+
+      root._pendingNearestCity = city
+      root.selectCity(city, false)
     }
   }
 }

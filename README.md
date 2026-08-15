@@ -11,9 +11,10 @@ target through the `mozillavpn` CLI.
   `User status: authenticated`)
 - Omarchy Quattro / `omarchy-shell`
 
-This plugin shells out to `mozillavpn` only (`status`, `servers`, `select`,
-`activate`, `deactivate`, `ui`). It does not require root, sudo, or network
-access beyond what Mozilla VPN already uses.
+This plugin shells out to `mozillavpn` (`status`, `servers`, `select`,
+`activate`, `deactivate`, `ui`) and, only when choosing a first-time default
+city, to `curl https://ipinfo.io/json` while the VPN is disconnected. It does
+not require root or sudo.
 
 ## Install
 
@@ -34,6 +35,8 @@ omarchy plugin enable io.github.davydotcom.mozilla-vpn --section right --after o
 - Middle click: refresh status
 - Panel switch: toggle VPN
 - City list: select a city and connect (remembers recent cities)
+- First run with no saved city: while disconnected, picks the nearest Mozilla
+  VPN city from your public IP location
 - Keyboard: `t` toggles, `/` focuses search, arrows move, Enter activates,
   Escape closes
 

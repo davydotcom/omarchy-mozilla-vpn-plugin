@@ -45,6 +45,7 @@ Panel {
   readonly property color selectedFill: bar ? Style.selectedFillFor(bar.foreground, Color.accent) : "transparent"
 
   readonly property var recentCityIds: settings.recentCityIds instanceof Array ? settings.recentCityIds : []
+  readonly property bool nearestDefaultApplied: settings.nearestDefaultApplied === true
   readonly property var filteredCities: displayCities()
   readonly property string icon: vpn.active ? "󰖂" : "󰦞"
 
@@ -99,6 +100,15 @@ Panel {
     return Model.matchesCurrent(city, vpn.countryCode, vpn.city)
   }
 
+  function writeSettings(values) {
+    var entry = { id: root.moduleName }
+    for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
+    for (var key in values) entry[key] = values[key]
+    root.settings = entry
+    if (!root.bar || !root.bar.shell || typeof root.bar.shell.updateEntryInline !== "function") return
+    root.bar.shell.updateEntryInline(root.moduleName, entry)
+  }
+
   function persistRecentCity(city, opts) {
     var id = String((city && city.id) || "")
     if (id === "") return
@@ -115,22 +125,40 @@ Panel {
       }
     }
     if (next.length > 6) next = next.slice(0, 6)
-    if (!root.bar || !root.bar.shell || typeof root.bar.shell.updateEntryInline !== "function") return
-    var entry = { id: root.moduleName }
-    for (var key in settings) if (key !== "id") entry[key] = settings[key]
-    entry.recentCityIds = next
-    root.settings = entry
-    root.bar.shell.updateEntryInline(root.moduleName, entry)
+    writeSettings({ recentCityIds: next })
   }
 
   function syncRememberedCity() {
+    // Wait for the one-shot nearest-default pass before seeding Mozilla's
+    // current target into recent, or a leftover Romania/etc. would look like
+    // a user preference and block auto-locate.
+    if (!nearestDefaultApplied && recentCityIds.length === 0) return
     var city = currentCity()
     if (city) persistRecentCity(city, { seedOnly: true })
+  }
+
+  function tryNearestDefault() {
+    if (nearestDefaultApplied) return
+    if (recentCityIds.length > 0) {
+      writeSettings({ nearestDefaultApplied: true })
+      return
+    }
+    vpn.maybeRequestNearestDefault()
+  }
+
+  function markNearestDefaultApplied(city) {
+    var values = { nearestDefaultApplied: true }
+    if (city) {
+      var id = String(city.id || "")
+      if (id !== "") values.recentCityIds = [id].concat(recentCityIds.filter(function(existing) { return existing !== id })).slice(0, 6)
+    }
+    writeSettings(values)
   }
 
   function chooseCity(city) {
     if (!city || vpn.busy) return
     persistRecentCity(city)
+    writeSettings({ nearestDefaultApplied: true })
     vpn.selectCity(city, true)
   }
 
@@ -217,6 +245,7 @@ Panel {
     cityQuery = ""
     if (panelFlick) panelFlick.contentY = 0
     vpn.refresh(true)
+    root.tryNearestDefault()
     root.syncRememberedCity()
     Qt.callLater(function() {
       var current = root.currentCity()
@@ -242,12 +271,23 @@ Panel {
   Connections {
     target: vpn
     function onCitiesChanged() {
+      root.tryNearestDefault()
       root.syncRememberedCity()
       root.ensureCursor()
     }
     function onCityChanged() { root.syncRememberedCity() }
     function onCountryCodeChanged() { root.syncRememberedCity() }
-    function onAuthenticatedChanged() { root.ensureCursor() }
+    function onAuthenticatedChanged() {
+      root.tryNearestDefault()
+      root.ensureCursor()
+    }
+    function onActiveChanged() {
+      if (!vpn.active) root.tryNearestDefault()
+    }
+    function onNearestDefaultFinished(city) {
+      root.markNearestDefaultApplied(city)
+      root.syncRememberedCity()
+    }
   }
 
   IpcHandler {
