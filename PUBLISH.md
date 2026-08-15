@@ -32,7 +32,7 @@ vpn
 
 ### Maintainer notes
 
-Requires the Mozilla VPN client (`mozillavpn` on PATH) and an authenticated account. The widget shells out to mozillavpn status/servers/select/activate/deactivate/ui only — no sudo/root.
+Requires the Mozilla VPN client (`mozillavpn` on PATH) and an authenticated account. The widget shells out to mozillavpn status/servers/select/activate/deactivate/ui, and once while disconnected may call `curl https://ipinfo.io/json` to pick a nearest default city — no sudo/root. Includes preview.png of the bar panel.
 
 ### Submission checklist
 
