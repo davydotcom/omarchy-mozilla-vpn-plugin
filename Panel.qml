@@ -285,8 +285,9 @@ Panel {
       if (!vpn.active) root.tryNearestDefault()
     }
     function onNearestDefaultFinished(city) {
+      // Do not seed vpn.city here — status is still the previous target
+      // until the delayed refresh lands.
       root.markNearestDefaultApplied(city)
-      root.syncRememberedCity()
     }
   }
 
